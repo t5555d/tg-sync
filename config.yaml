@@ -1,0 +1,29 @@
+logging:
+  level: INFO
+
+pipeline:
+- filters:
+  - chat_id: -623956442
+  actions:
+  - action: set
+    chat_name: Семейство
+    save_media: true
+- filters:
+  - chat_id: 213080381
+  actions:
+  - action: set
+    chat_name: Катя
+    save_media: true
+- filters:
+  - chat_id: 512494047
+  actions:
+  - action: log
+    level: warn
+
+- filters:
+  - save_media: true
+    type_id: [photo, video]
+  actions:
+  - action: log
+  # - action: save
+  #   save_path: "./Telegram/{date:%Y}/{chat_name}/{date:%Y%m%d-%H%M%S}-{type_id}-{message_id}.{ext}"
