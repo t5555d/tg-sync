@@ -3,8 +3,8 @@ import logging
 from dataclasses import dataclass
 
 import pyrogram as pg
-from pyrogram.enums import MessageMediaType
 
+from .event import fill_event
 from .pipeline import Pipeline
 
 
@@ -21,27 +21,6 @@ class Account:
 
     def __repr__(self):
         return f"Account {self.id}"
-
-
-def create_message_event(account, message):
-    media_types = {
-        MessageMediaType.AUDIO: "audio",
-        MessageMediaType.DOCUMENT: "document",
-        MessageMediaType.PHOTO: "photo",
-        MessageMediaType.VIDEO: "video",
-        MessageMediaType.VOICE: "voice",
-    }
-    media_type = getattr(message, "media", None)
-    media_type = media_types.get(media_type)
-
-    return {
-        "message_id": message.id,
-        "date": message.date,
-        "account_id": account.id,
-        "chat_id": getattr(message.chat, "id", None),
-        "user_id": getattr(message.from_user, "id", None),
-        "type_id": media_type,
-    }
 
 
 class Session:
@@ -70,11 +49,25 @@ class Session:
     async def list_chats(self):
         logger.info("%s: listing available chats", self.account)
         async for dialog in self.client.get_dialogs():
-            chat = dialog.chat
-            logger.info("Chat %d: %s", chat.id, repr(chat))
+            chat_event = fill_event(chat=dialog.chat)
+            logger.info("Chat %s", repr(chat_event))
+            pipeline = self.pipeline.filter_pipeline(account=self.account, chat=dialog.chat)
+            if pipeline:
+                logger.info(repr(pipeline))
+
+    async def list_users(self):
+        logger.info("%s: listing available users")
+        for user in await self.client.get_contacts():
+            user_event = fill_event(user=user)
+            logger.info("User %s", repr(user_event))
 
     async def on_message(self, client, message):
-        event = create_message_event(self.account, message)
+        event = fill_event(
+            message=message,
+            account=self.account,
+            chat=message.chat,
+            user=message.from_user,
+        )
         self.pipeline.execute(event)
 
 

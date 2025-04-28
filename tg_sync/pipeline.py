@@ -4,11 +4,14 @@ from dataclasses import dataclass
 from enum import Enum, auto
 from typing import Optional
 
+from .event import EVENT_FIELDS, fill_event
 
 logger = logging.getLogger(__name__)
 
 
 class Filter:
+    MATCH_ALWAYS = "---tg-sync-match-always---"
+
     def __init__(self, **values):
         self.values = values
 
@@ -16,6 +19,8 @@ class Filter:
         return f"Filter: {self.values}"
 
     def matches_key(self, event, key) -> bool:
+        if event.get(key) == Filter.MATCH_ALWAYS:
+            return True
         actual_value = event.get(key)
         expected_value = self.values.get(key)
         if isinstance(expected_value, list):
@@ -38,6 +43,7 @@ class Filter:
 
 class ExecuteResult(Enum):
     SKIPPED = auto()
+    DRY_RUN = auto()
     EXIT_STEP = auto()
     EXIT_PIPELINE = auto()
 
@@ -63,8 +69,8 @@ class Action:
     def __repr__(self):
         return f"Action {self.action}({self.params})"
 
-    def execute(self, event: dict) -> Optional[ExecuteResult]:
-        self.executer(event, self.params)
+    def execute(self, event: dict, **kwargs) -> Optional[ExecuteResult]:
+        return self.executer(event, self.params, **kwargs)
 
 
 @dataclass
@@ -82,21 +88,21 @@ class ProcessingStep:
             for filter in self.filters
         )
 
-    def execute(self, event: dict) -> Optional[ExecuteResult]:
+    def execute(self, event: dict, **kwargs) -> Optional[ExecuteResult]:
         if self.filters and all(not filter.matches(event) for filter in self.filters):
             return ExecuteResult.SKIPPED
         for action in self.actions:
-            result = action.execute(event)
+            result = action.execute(event, **kwargs)
             if result == ExecuteResult.EXIT_STEP:
                 break
-            if result == ExecuteResult.EXIT_PIPELINE:
+            if result in (ExecuteResult.EXIT_PIPELINE, ExecuteResult.DRY_RUN):
                 return result
 
 
 class Pipeline:
 
     @staticmethod
-    def from_config(steps: list[dict]):
+    def from_config(steps: list[dict]) -> "Pipeline":
         return Pipeline([ProcessingStep(**step) for step in steps])
 
     def __init__(self, steps: list[ProcessingStep]):
@@ -112,3 +118,26 @@ class Pipeline:
             logger.debug("Got result %s from step %s", result, step)
             if result == ExecuteResult.EXIT_PIPELINE:
                 break
+
+    def filter_pipeline(self, **kwargs) -> Optional["Pipeline"]:
+        event = {
+            key : Filter.MATCH_ALWAYS
+            for key in EVENT_FIELDS
+        }
+        fill_event(event, **kwargs)
+        filtered_steps = []
+        has_meaningful_actions = False
+        for step in self.steps:
+            result = step.execute(event, dry_run=True)
+            if result == ExecuteResult.SKIPPED:
+                continue  # filters not passing, skip
+            if result == ExecuteResult.EXIT_PIPELINE:
+                break
+            if result == ExecuteResult.DRY_RUN:
+                has_meaningful_actions = True
+            filtered_steps.append(step)
+
+        if has_meaningful_actions:
+            return Pipeline(filtered_steps)
+        else:
+            return None

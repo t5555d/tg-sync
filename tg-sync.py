@@ -7,11 +7,13 @@ import os
 import yaml
 
 import pyrogram as pg
+from pyrogram.enums import MessageMediaType
 
 import tg_sync.actions
 from tg_sync.pipeline import Pipeline
 from tg_sync.session import Session, Account
 
+logger = logging.getLogger(__name__)
 
 async def run(params):
     with open(params.config) as file:
@@ -34,9 +36,14 @@ async def run(params):
     try:
         await asyncio.gather(*[session.start() for session in sessions])
 
-        if params.list_chats:
-            for session in sessions:
+        for session in sessions:
+            if params.list_chats:
                 await session.list_chats()
+            if params.list_users:
+                await session.list_users()
+        if params.list_types:
+            for type in MessageMediaType:
+                logger.info("type_id=%s", type.value)
         if params.live:
             await pg.idle()
     finally:
@@ -49,6 +56,8 @@ def main():
     parser.add_argument("-a", "--account", required=True, action="append", help="Account directory")
     parser.add_argument("--live", action="store_true")
     parser.add_argument("--list-chats", action="store_true")
+    parser.add_argument("--list-users", action="store_true")
+    parser.add_argument("--list-types", action="store_true")
     params = parser.parse_args()
 
     asyncio.run(run(params))

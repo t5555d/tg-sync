@@ -1,13 +1,19 @@
 import logging
 
-from .pipeline import Action
-
+from .pipeline import Action, ExecuteResult
+from .event import EVENT_FIELDS
 
 logger = logging.getLogger(__name__)
 
 
-def set_values(event, params):
+def set_values(event, params, **kwargs):
+    for key, value in params.items():
+        if key in EVENT_FIELDS:
+            raise ValueError(f"Action 'set' can't override built-in key: '{key}'")
     event.update(params)
+
+def exit_pipeline(event, params, **kwargs):
+    return ExecuteResult.EXIT_PIPELINE
 
 def get_log_level_variants(level):
     yield level
@@ -19,7 +25,9 @@ def get_log_level(level):
         if isinstance(variant, int):
             return variant
 
-def log_values(event, params):
+def log_values(event, params, dry_run=False, **kwargs):
+    if dry_run:
+        return ExecuteResult.DRY_RUN
     level = params.get("level", "INFO")
     level = get_log_level(level)
     message = params.get("message", "Event: {event}")
@@ -27,6 +35,7 @@ def log_values(event, params):
 
 Action.register_executer("set", set_values)
 Action.register_executer("log", log_values)
+Action.register_executer("exit", exit_pipeline)
 
 
 async def process_message(client, message, env):
