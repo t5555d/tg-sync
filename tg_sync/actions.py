@@ -1,51 +1,60 @@
 import logging
 
-from .pipeline import Action, ExecuteResult
+from .pipeline import Action, register_action, ExecuteResult
 from .event import EVENT_FIELDS
 
 logger = logging.getLogger(__name__)
 
 
-def set_values(event, params, **kwargs):
-    for key, value in params.items():
-        if key in EVENT_FIELDS:
-            raise ValueError(f"Action 'set' can't override built-in key: '{key}'")
-    event.update(params)
+@register_action
+class SetAction(Action):
+    name = "set"
 
-def exit_pipeline(event, params, **kwargs):
-    return ExecuteResult.EXIT_PIPELINE
+    def __init__(self, **values):
+        for key in values:
+            if key in EVENT_FIELDS:
+                raise ValueError(f"Action '{self.name}' can't override built-in key: '{key}'")
+        self.values = values
 
-def get_log_level_variants(level):
-    yield level
-    yield logging.getLevelName(level)
-    yield logging.getLevelName(level.upper())
+    def __repr__(self):
+        return f"Action {self.name}: " + ", ".join(f"{key}={val}" for key, val in self.values.items())
 
-def get_log_level(level):
-    for variant in get_log_level_variants(level):
-        if isinstance(variant, int):
-            return variant
+    def execute(self, event, **kwargs):
+        event.update(self.values)
 
-def log_values(event, params, dry_run=False, **kwargs):
-    if dry_run:
-        return ExecuteResult.DRY_RUN
-    level = params.get("level", "INFO")
-    level = get_log_level(level)
-    message = params.get("message", "Event: {event}")
-    logger.log(level, message.format(event=event))
 
-Action.register_executer("set", set_values)
-Action.register_executer("log", log_values)
-Action.register_executer("exit", exit_pipeline)
+@register_action
+class ExitAction(Action):
+    name = "exit"
+
+    def execute(self, event, **kwargs):
+        return ExecuteResult.EXIT_PIPELINE
+
+
+@register_action
+class LogAction(Action):
+    name = "log"
+
+    def __init__(self, logger="tg-sync", level="INFO", message="Event: {event}"):
+        def get_log_level_variants(level):
+            yield level
+            yield logging.getLevelName(level)
+            yield logging.getLevelName(level.upper())
+
+        self.logger = logging.getLogger()
+        self.level = next(lvl for lvl in get_log_level_variants(level) if isinstance(lvl, int))
+        self.message = message
+
+    def __repr__(self):
+        return f"Action '{self.name}': level={self.level}"
+
+    def execute(self, event, dry_run=False, **kwargs):
+        if dry_run:
+            return ExecuteResult.DRY_RUN
+        self.logger.log(self.level, self.message.format(event=event))
 
 
 async def process_message(client, message, env):
-    action = env.get("action")
-    if action == "debug":
-        logger.debug("Action %s, Env %s, Message %s", action, env, message)
-    if action == "log":
-        logger.info("Action %s, Env %s", action, env)
-
-    if action == "save":
         save_path = env["save_path"].format(**env)
         os.makedirs(save_path, exist_ok=True)
         download_path = await client.download_media(message)

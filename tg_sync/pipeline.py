@@ -1,6 +1,5 @@
 import logging
 
-from dataclasses import dataclass
 from enum import Enum, auto
 from typing import Optional
 
@@ -49,38 +48,40 @@ class ExecuteResult(Enum):
 
 
 class Action:
-    executers = {}
+    subclasses = {}
 
     @staticmethod
-    def register_executer(action: str, executer):
-        Action.executers[action] = executer
-
-    @staticmethod
-    def get_executer(action: str):
-        if action not in Action.executers:
+    def from_config(action: str, **params):
+        if action not in Action.subclasses:
             raise ValueError(f"Unknown action '{action}'")
-        return Action.executers[action]
-
-    def __init__(self, action: str, **params):
-        self.action = action
-        self.params = params
-        self.executer = Action.get_executer(action)
+        return Action.subclasses[action](**params)
 
     def __repr__(self):
-        return f"Action {self.action}({self.params})"
+        return f"Action {self.name}"
 
     def execute(self, event: dict, **kwargs) -> Optional[ExecuteResult]:
-        return self.executer(event, self.params, **kwargs)
+        raise RuntimeError("Action.execute should be implemented")
 
 
-@dataclass
+def register_action(action_class):
+    action_name = action_class.name
+    registered_class = Action.subclasses.get(action_name)
+    if registered_class:
+        raise ValueError(f"Action '{action_name}' is registered multiple times: {registered_class} and {action_class}")
+    Action.subclasses[action_name] = action_class
+
+
 class ProcessingStep:
-    filters: Optional[list[Filter]]
-    actions: list[Action]
+    @staticmethod
+    def from_config(actions: list[dict], filters: list[dict] = None) -> "ProcessingStep":
+        return ProcessingStep(
+            filters=[Filter(**filter) for filter in (filters or [])],
+            actions=[Action.from_config(**action) for action in actions],
+        )
 
-    def __post_init__(self):
-        self.filters = [Filter(**filter) for filter in self.filters]
-        self.actions = [Action(**action) for action in self.actions]
+    def __init__(self, filters: list[Filter], actions: list[Action]):
+        self.filters = filters
+        self.actions = actions
 
     def matches_partially(self, **kwargs):
         return any(
@@ -103,7 +104,7 @@ class Pipeline:
 
     @staticmethod
     def from_config(steps: list[dict]) -> "Pipeline":
-        return Pipeline([ProcessingStep(**step) for step in steps])
+        return Pipeline([ProcessingStep.from_config(**step) for step in steps])
 
     def __init__(self, steps: list[ProcessingStep]):
         self.steps = steps

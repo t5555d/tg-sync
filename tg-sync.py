@@ -13,7 +13,7 @@ import tg_sync.actions
 from tg_sync.pipeline import Pipeline
 from tg_sync.session import Session, Account
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("tg-sync")
 
 async def run(params):
     with open(params.config) as file:
@@ -34,7 +34,10 @@ async def run(params):
     sessions = [Session(account, pipeline) for account in accounts]
 
     try:
-        await asyncio.gather(*[session.start() for session in sessions])
+        await asyncio.gather(*[
+            session.start(offset=params.offset, live=params.live)
+            for session in sessions
+        ])
 
         if params.list_types:
             for type in MessageMediaType:
@@ -44,12 +47,6 @@ async def run(params):
                 await session.list_chats()
             if params.list_users:
                 await session.list_users()
-
-        # incrementally process history:
-        await asyncio.gather(*[
-            session.process_history(params.offset)
-            for session in sessions
-        ])
 
         if params.live:
             await pg.idle()
@@ -72,6 +69,11 @@ def main():
         now - don't process chat history;
         or an ISO 8601 formatted date to process from (e.g. 2025-04-29T00:00:00)""")
     params = parser.parse_args()
+
+    # do no actions on config keys
+    if params.list_chats or params.list_users or params.list_types:
+        params.offset = "now"
+        params.live = False
 
     asyncio.run(run(params))
 

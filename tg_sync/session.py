@@ -9,6 +9,7 @@ import pyrogram as pg
 
 from .event import fill_event
 from .pipeline import Pipeline
+from .utils import save_yaml
 
 
 logger = logging.getLogger(__name__)
@@ -46,9 +47,6 @@ class Session:
         if not self.progress:
             self.progress = {}
 
-        msg_handler = pg.handlers.MessageHandler(self.on_message)
-        self.client.add_handler(msg_handler)
-
     def _get_chat_pipeline(self, chat):
         if chat.id in self.chat_pipelines:
             return self.chat_pipelines[chat.id]
@@ -64,12 +62,11 @@ class Session:
             user=message.from_user,
         )
         pipeline.execute(event)
-        await self.message_processed(message)
+        await self._message_processed(message)
 
-    async def message_processed(self, message):
+    async def _message_processed(self, message):
         self.progress[message.chat.id] = message.id
-        with open(self.progress_path, "w") as file:
-            yaml.dump(self.progress, file)
+        await save_yaml(self.progress, self.progress_path)
 
     async def _get_chat_history(self, chat_id, limit, **offsets):
         messages = []
@@ -85,9 +82,7 @@ class Session:
         messages.reverse()
         return messages
 
-    async def process_history(self, offset: str):
-        if offset == "now":
-            return
+    async def _process_history(self, offset: str):
         async for dialog in self.client.get_dialogs():
             chat_pipeline = self._get_chat_pipeline(dialog.chat)
             if not chat_pipeline:
@@ -102,16 +97,22 @@ class Session:
             else:
                 offsets["offset_date"] = datetime.fromisoformat(offset)
 
-            batch_size = 5
+            batch_size = 30
             messages = await self._get_chat_history(chat_id, batch_size, **offsets)
             while messages:
                 for message in messages:
                     await self._process_message(message, chat_pipeline)
                 messages = await self._get_chat_history(chat_id, batch_size, offset_id=self.progress[chat_id])
 
-    async def start(self):
+    async def start(self, offset: str, live: bool):
         logger.info("%s: starting...", self.account)
         await self.client.start()
+
+        if offset != "now":
+            await self._process_history(offset)
+        if live:
+            msg_handler = pg.handlers.MessageHandler(self._on_message)
+            self.client.add_handler(msg_handler)
 
     async def stop(self):
         logger.info("%s: stopping...", self.account)
@@ -132,7 +133,7 @@ class Session:
             user_event = fill_event(user=user)
             logger.info("User %s", repr(user_event))
 
-    async def on_message(self, client, message):
+    async def _on_message(self, client, message):
         chat_pipeline = self._get_chat_pipeline(message.chat)
         if chat_pipeline:
             await self._process_message(message, chat_pipeline)
