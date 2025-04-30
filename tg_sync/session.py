@@ -1,6 +1,9 @@
 import logging
+import os.path
+import yaml
 
 from dataclasses import dataclass
+from datetime import datetime
 
 import pyrogram as pg
 
@@ -27,6 +30,7 @@ class Session:
     def __init__(self, account: Account, pipeline: Pipeline):
         self.account = account
         self.pipeline = pipeline
+        self.chat_pipelines = {}
         self.client = pg.Client(
             account.id,
             account.api_id,
@@ -34,9 +38,76 @@ class Session:
             phone_number=account.phone,
             workdir=account.workdir,
         )
+        self.progress = {}
+        self.progress_path = account.workdir + "/progress.yaml"
+        if os.path.exists(self.progress_path):
+            with open(self.progress_path) as file:
+                self.progress = yaml.safe_load(file)
+        if not self.progress:
+            self.progress = {}
 
         msg_handler = pg.handlers.MessageHandler(self.on_message)
         self.client.add_handler(msg_handler)
+
+    def _get_chat_pipeline(self, chat):
+        if chat.id in self.chat_pipelines:
+            return self.chat_pipelines[chat.id]
+        chat_pipeline = self.pipeline.filter_pipeline(account=self.account, chat=chat)
+        self.chat_pipelines[chat.id] = chat_pipeline
+        return chat_pipeline
+
+    async def _process_message(self, message, pipeline):
+        event = fill_event(
+            message=message,
+            account=self.account,
+            chat=message.chat,
+            user=message.from_user,
+        )
+        pipeline.execute(event)
+        await self.message_processed(message)
+
+    async def message_processed(self, message):
+        self.progress[message.chat.id] = message.id
+        with open(self.progress_path, "w") as file:
+            yaml.dump(self.progress, file)
+
+    async def _get_chat_history(self, chat_id, limit, **offsets):
+        messages = []
+        batch_options = dict(limit=limit, offset=-limit)
+        async for message in self.client.get_chat_history(chat_id, **offsets, **batch_options):
+            # messages are yielded in reverse chronological order
+            # if we detect first message again, then there are no any messages
+            if messages and messages[0].id == message.id:
+                break
+            if message.id == offsets.get("offset_id"):
+                break
+            messages.append(message)
+        messages.reverse()
+        return messages
+
+    async def process_history(self, offset: str):
+        if offset == "now":
+            return
+        async for dialog in self.client.get_dialogs():
+            chat_pipeline = self._get_chat_pipeline(dialog.chat)
+            if not chat_pipeline:
+                continue
+
+            chat_id = dialog.chat.id
+            offsets = {}
+            if offset == "processed":
+                offsets["offset_id"] = self.progress.get(chat_id, 0)
+            elif offset == "beginning":
+                offsets["offset_id"] = 0
+            else:
+                offsets["offset_date"] = datetime.fromisoformat(offset)
+
+            batch_size = 5
+            messages = await self._get_chat_history(chat_id, batch_size, **offsets)
+            while messages:
+                for message in messages:
+                    await self._process_message(message, chat_pipeline)
+                messages = await self._get_chat_history(chat_id, batch_size, offset_id=self.progress[chat_id])
 
     async def start(self):
         logger.info("%s: starting...", self.account)
@@ -62,12 +133,6 @@ class Session:
             logger.info("User %s", repr(user_event))
 
     async def on_message(self, client, message):
-        event = fill_event(
-            message=message,
-            account=self.account,
-            chat=message.chat,
-            user=message.from_user,
-        )
-        self.pipeline.execute(event)
-
-
+        chat_pipeline = self._get_chat_pipeline(message.chat)
+        if chat_pipeline:
+            await self._process_message(message, chat_pipeline)

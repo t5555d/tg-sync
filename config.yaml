@@ -20,10 +20,10 @@ pipeline:
   - action: log
     level: warn
 
-- filters:
-  - save_media: true
-    type_id: [photo, video]
-  actions:
-  - action: log
-  # - action: save
-  #   save_path: "./Telegram/{date:%Y}/{chat_name}/{date:%Y%m%d-%H%M%S}-{type_id}-{message_id}.{ext}"
+# - filters:
+#   - save_media: true
+#     type_id: [photo, video]
+#   actions:
+#   - action: log
+#   - action: save
+#     save_path: "./Telegram/{date:%Y}/{chat_name}/{date:%Y%m%d-%H%M%S}-{type_id}-{message_id}.{ext}"

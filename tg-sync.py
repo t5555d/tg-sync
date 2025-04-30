@@ -36,14 +36,21 @@ async def run(params):
     try:
         await asyncio.gather(*[session.start() for session in sessions])
 
+        if params.list_types:
+            for type in MessageMediaType:
+                logger.info("type_id=%s", type.value)
         for session in sessions:
             if params.list_chats:
                 await session.list_chats()
             if params.list_users:
                 await session.list_users()
-        if params.list_types:
-            for type in MessageMediaType:
-                logger.info("type_id=%s", type.value)
+
+        # incrementally process history:
+        await asyncio.gather(*[
+            session.process_history(params.offset)
+            for session in sessions
+        ])
+
         if params.live:
             await pg.idle()
     finally:
@@ -58,6 +65,12 @@ def main():
     parser.add_argument("--list-chats", action="store_true")
     parser.add_argument("--list-users", action="store_true")
     parser.add_argument("--list-types", action="store_true")
+    parser.add_argument("--offset", default="processed",
+        help="""Where to start processing of chat history. One of:
+        beginning - process chat from the beginning;
+        processed - process chat from the last processed message;
+        now - don't process chat history;
+        or an ISO 8601 formatted date to process from (e.g. 2025-04-29T00:00:00)""")
     params = parser.parse_args()
 
     asyncio.run(run(params))

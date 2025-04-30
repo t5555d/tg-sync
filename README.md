@@ -45,9 +45,11 @@ account_id: str
 chat_id: int
 chat_type: str
 chat_title: str
+chat_login: str
+chat_fullname: str
 user_id: int
-user_name: str
-user_title: str
+user_login: str
+user_fullname: str
 type_id: str
 date: datetime
 ```

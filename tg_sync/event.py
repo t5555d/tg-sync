@@ -12,11 +12,11 @@ EVENT_FIELDS = frozenset({
     "chat_id",
     "chat_type",
     "chat_title",
-    "chat_username",
+    "chat_login",
     "chat_fullname",
 
     "user_id",
-    "user_name",
+    "user_login",
     "user_fullname",
 })
 
@@ -48,14 +48,14 @@ def fill_event(event=None, message=None, account=None, chat=None, user=None):
             "chat_id": chat.id,
             "chat_type": chat.type.value,
             "chat_title": chat.title,
-            "chat_username": chat.username,
+            "chat_login": chat.username,
             "chat_fullname": _concat_optional(chat.first_name, chat.last_name),
         })
 
     if user:
         event.update({
             "user_id": user.id,
-            "user_name": user.username,
+            "user_login": user.username,
             "user_fullname": _concat_optional(user.first_name, user.last_name),
         })
 
