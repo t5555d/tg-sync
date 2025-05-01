@@ -1,7 +1,10 @@
 import logging
+import os
 
-from .pipeline import Action, register_action, ExecuteResult
 from .event import EVENT_FIELDS
+from .pipeline import Action, register_action, ExecuteResult
+from .session import Session
+from .utils import get_uniq_path
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +22,7 @@ class SetAction(Action):
     def __repr__(self):
         return f"Action {self.name}: " + ", ".join(f"{key}={val}" for key, val in self.values.items())
 
-    def execute(self, event, **kwargs):
+    async def execute(self, event, **kwargs):
         event.update(self.values)
 
 
@@ -27,7 +30,7 @@ class SetAction(Action):
 class ExitAction(Action):
     name = "exit"
 
-    def execute(self, event, **kwargs):
+    async def execute(self, event, **kwargs):
         return ExecuteResult.EXIT_PIPELINE
 
 
@@ -48,18 +51,29 @@ class LogAction(Action):
     def __repr__(self):
         return f"Action '{self.name}': level={self.level}"
 
-    def execute(self, event, dry_run=False, **kwargs):
+    async def execute(self, event, dry_run=False, **kwargs):
         if dry_run:
             return ExecuteResult.DRY_RUN
         self.logger.log(self.level, self.message.format(event=event))
 
 
-async def process_message(client, message, env):
-        save_path = env["save_path"].format(**env)
-        os.makedirs(save_path, exist_ok=True)
-        download_path = await client.download_media(message)
-        dst_path = get_dst_file(download_path, save_path)
-        os.rename(download_path, dst_path)
-        logger.info("Saved file %s", dst_path)
+@register_action
+class SaveAction(Action):
+    name = "save"
 
+    def __init__(self, save_path: str):
+        self.save_path = save_path
 
+    async def execute(self, event, dry_run=False, **kwargs):
+        if dry_run:
+            return ExecuteResult.DRY_RUN
+        session = Session.get(event["account_id"])
+        download_path = await session.download_media(event["chat_id"], event["message_id"])
+        file_name = os.path.basename(download_path)
+        (base, ext) = os.path.splitext(file_name)
+        save_path = self.save_path.format(file_name=file_name, base_name=base, ext=ext, **event)
+        save_dir = os.path.dirname(save_path)
+        os.makedirs(save_dir, exist_ok=True)
+        uniq_path = get_uniq_path(save_path)
+        os.rename(download_path, uniq_path)
+        logger.info("Saved file %s", uniq_path)

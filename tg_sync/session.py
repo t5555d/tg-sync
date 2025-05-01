@@ -28,6 +28,12 @@ class Account:
 
 
 class Session:
+    instances: dict[str, "Session"] = {}
+
+    @staticmethod
+    def get(account_id: str) -> "Session":
+        return Session.instances[account_id]
+
     def __init__(self, account: Account, pipeline: Pipeline):
         self.account = account
         self.pipeline = pipeline
@@ -47,10 +53,12 @@ class Session:
         if not self.progress:
             self.progress = {}
 
-    def _get_chat_pipeline(self, chat):
+        Session.instances[account.id] = self
+
+    async def _get_chat_pipeline(self, chat):
         if chat.id in self.chat_pipelines:
             return self.chat_pipelines[chat.id]
-        chat_pipeline = self.pipeline.filter_pipeline(account=self.account, chat=chat)
+        chat_pipeline = await self.pipeline.filter_pipeline(account=self.account, chat=chat)
         self.chat_pipelines[chat.id] = chat_pipeline
         return chat_pipeline
 
@@ -61,7 +69,7 @@ class Session:
             chat=message.chat,
             user=message.from_user,
         )
-        pipeline.execute(event)
+        await pipeline.execute(event)
         await self._message_processed(message)
 
     async def _message_processed(self, message):
@@ -84,7 +92,7 @@ class Session:
 
     async def _process_history(self, offset: str):
         async for dialog in self.client.get_dialogs():
-            chat_pipeline = self._get_chat_pipeline(dialog.chat)
+            chat_pipeline = await self._get_chat_pipeline(dialog.chat)
             if not chat_pipeline:
                 continue
 
@@ -123,9 +131,9 @@ class Session:
         async for dialog in self.client.get_dialogs():
             chat_event = fill_event(chat=dialog.chat)
             logger.info("Chat %s", repr(chat_event))
-            pipeline = self.pipeline.filter_pipeline(account=self.account, chat=dialog.chat)
-            if pipeline:
-                logger.info(repr(pipeline))
+            chat_pipeline = await self._get_chat_pipeline(dialog.chat)
+            if chat_pipeline:
+                logger.info(repr(chat_pipeline))
 
     async def list_users(self):
         logger.info("%s: listing available users")
@@ -134,6 +142,11 @@ class Session:
             logger.info("User %s", repr(user_event))
 
     async def _on_message(self, client, message):
-        chat_pipeline = self._get_chat_pipeline(message.chat)
+        chat_pipeline = await self._get_chat_pipeline(message.chat)
         if chat_pipeline:
             await self._process_message(message, chat_pipeline)
+
+    async def download_media(self, chat_id: int, message_id: int):
+        message = await self.client.get_messages(chat_id, message_id)
+        download_path = await self.client.download_media(message)
+        return download_path

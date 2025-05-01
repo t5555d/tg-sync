@@ -33,12 +33,6 @@ class Filter:
             for key in self.values
         )
 
-    def matches_partially(self, **kwargs) -> bool:
-        return all(
-            key not in event or self.matches_key(event, key)
-            for key in self.values
-        )
-
 
 class ExecuteResult(Enum):
     SKIPPED = auto()
@@ -59,7 +53,7 @@ class Action:
     def __repr__(self):
         return f"Action {self.name}"
 
-    def execute(self, event: dict, **kwargs) -> Optional[ExecuteResult]:
+    async def execute(self, event: dict, **kwargs) -> Optional[ExecuteResult]:
         raise RuntimeError("Action.execute should be implemented")
 
 
@@ -83,17 +77,11 @@ class ProcessingStep:
         self.filters = filters
         self.actions = actions
 
-    def matches_partially(self, **kwargs):
-        return any(
-            filter.matches_partially(**kwargs)
-            for filter in self.filters
-        )
-
-    def execute(self, event: dict, **kwargs) -> Optional[ExecuteResult]:
+    async def execute(self, event: dict, **kwargs) -> Optional[ExecuteResult]:
         if self.filters and all(not filter.matches(event) for filter in self.filters):
             return ExecuteResult.SKIPPED
         for action in self.actions:
-            result = action.execute(event, **kwargs)
+            result = await action.execute(event, **kwargs)
             if result == ExecuteResult.EXIT_STEP:
                 break
             if result in (ExecuteResult.EXIT_PIPELINE, ExecuteResult.DRY_RUN):
@@ -112,15 +100,15 @@ class Pipeline:
     def __repr__(self):
         return f"Pipeline:\n- " + "\n- ".join(repr(step) for step in self.steps)
 
-    def execute(self, event: dict):
+    async def execute(self, event: dict):
         logger.debug("Got event %s", event)
         for step in self.steps:
-            result = step.execute(event)
+            result = await step.execute(event)
             logger.debug("Got result %s from step %s", result, step)
             if result == ExecuteResult.EXIT_PIPELINE:
                 break
 
-    def filter_pipeline(self, **kwargs) -> Optional["Pipeline"]:
+    async def filter_pipeline(self, **kwargs) -> Optional["Pipeline"]:
         event = {
             key : Filter.MATCH_ALWAYS
             for key in EVENT_FIELDS
@@ -129,7 +117,7 @@ class Pipeline:
         filtered_steps = []
         has_meaningful_actions = False
         for step in self.steps:
-            result = step.execute(event, dry_run=True)
+            result = await step.execute(event, dry_run=True)
             if result == ExecuteResult.SKIPPED:
                 continue  # filters not passing, skip
             if result == ExecuteResult.EXIT_PIPELINE:
