@@ -61,17 +61,29 @@ class LogAction(Action):
 class SaveAction(Action):
     name = "save"
 
-    def __init__(self, save_path: str):
+    def __init__(self, save_path: str, old_save_path: str = None, skip_existing: bool = False):
         self.save_path = save_path
+        self.old_save_path = old_save_path
+        self.skip_existing = skip_existing
 
     async def execute(self, event, dry_run=False, **kwargs):
         if dry_run:
             return ExecuteResult.DRY_RUN
+        save_path = self.save_path.format(**event)
+        if self.skip_existing:
+            if os.path.exists(save_path) and os.path.getsize(save_path) == event["file_size"]:
+                logger.info("Skip downloading existing file %s", save_path)
+                return ExecuteResult.SKIPPED
+
+            if self.old_save_path:
+                old_save_path = self.old_save_path.format(**event)
+                if os.path.exists(old_save_path) and os.path.getsize(old_save_path) == event["file_size"]:
+                    os.rename(old_save_path, save_path)
+                    logger.info("Moved file from old location: %s", save_path)
+                    return None
+
         session = Session.get(event["account_id"])
         download_path = await session.download_media(event["chat_id"], event["message_id"])
-        file_name = os.path.basename(download_path)
-        (base, ext) = os.path.splitext(file_name)
-        save_path = self.save_path.format(file_name=file_name, base_name=base, ext=ext, **event)
         save_dir = os.path.dirname(save_path)
         os.makedirs(save_dir, exist_ok=True)
         uniq_path = get_uniq_path(save_path)

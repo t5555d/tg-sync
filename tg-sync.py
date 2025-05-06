@@ -6,10 +6,8 @@ import logging
 import os
 import yaml
 
-import pyrogram as pg
-from pyrogram.enums import MessageMediaType
-
 import tg_sync.actions
+from tg_sync.event import MEDIA_TYPES
 from tg_sync.pipeline import Pipeline
 from tg_sync.session import Session, Account
 
@@ -40,8 +38,8 @@ async def run(params):
         ])
 
         if params.list_types:
-            for type in MessageMediaType:
-                logger.info("type_id=%s", type.value)
+            for type in MEDIA_TYPES:
+                logger.info("type_id=%s", type)
         for session in sessions:
             if params.list_chats:
                 await session.list_chats()
@@ -49,7 +47,7 @@ async def run(params):
                 await session.list_users()
 
         if params.live:
-            await pg.idle()
+            await asyncio.Event().wait()
     finally:
         await asyncio.gather(*[session.stop() for session in sessions])
 

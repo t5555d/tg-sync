@@ -52,9 +52,13 @@ user_login: str
 user_fullname: str
 type_id: str
 date: datetime
+file_ext: str
+file_name: str
+file_size: int
+file_type: str
 ```
 
-Processing pipeline consists of steps, executed sequentially. Each steps defines `filters` (optional) and `actions` (required). If `filters` are present, event should match at least one of filters to execute `actions`.
+Processing pipeline consists of steps, executed sequentially. Each step defines `filters` (optional) and `actions` (required). If `filters` are present, event should match at least one of filters to execute `actions`.
 
 Each filter consists of keys and expected values: either scalar value, or list. If event matches all filter keys, then filter is matched (and executes following actions).
 
@@ -81,7 +85,7 @@ For example, the following pipeline saves photo and video from two chats into cu
     type_id: [photo, video]
   actions:
   - action: save
-    save_path: './Telegram/{date:%Y}/{chat_name}/{date:%Y%m%d-%H%M%S}-{type_id}-{message_id}.{ext}'
+    save_path: './Telegram/{date:%Y}/{chat_name}/{date:%Y%m%d-%H%M%S}-{type_id}-{message_id}{file_ext}'
 ```
 
 Action `exit` can be used to filter events out of pipeline:

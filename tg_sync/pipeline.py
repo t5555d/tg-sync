@@ -77,6 +77,9 @@ class ProcessingStep:
         self.filters = filters
         self.actions = actions
 
+    def __repr__(self):
+        return ", ".join(repr(item) for item in self.filters + self.actions)
+
     async def execute(self, event: dict, **kwargs) -> Optional[ExecuteResult]:
         if self.filters and all(not filter.matches(event) for filter in self.filters):
             return ExecuteResult.SKIPPED

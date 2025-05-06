@@ -2,6 +2,9 @@ import aiofiles
 import os.path
 import yaml
 
+from telethon.types import Channel, Chat, User, PeerChannel, PeerChat, PeerUser
+from telethon.utils import get_peer_id
+
 async def save_yaml(data, path):
     async with aiofiles.open(path, "w") as file:
         await file.write(yaml.dump(data))
@@ -14,3 +17,13 @@ def get_uniq_path(file_path: str) -> str:
         count += 1
         file_path = f"{base} ({count}){ext}"
     return file_path
+
+def get_chat_id(chat):
+    if isinstance(chat, Channel):
+        return get_peer_id(PeerChannel(chat.id))
+    elif isinstance(chat, Chat):
+        return get_peer_id(PeerChat(chat.id))
+    elif isinstance(chat, User):
+        return get_peer_id(PeerUser(chat.id))
+    else:
+        raise ValueError(f"Unsupported type of chat: {type(chat)}")

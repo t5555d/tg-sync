@@ -1,6 +1,9 @@
 from enum import Enum
 
-from pyrogram.enums import ChatType, MessageMediaType
+from telethon.types import Channel, Chat, User
+from telethon.utils import get_input_location
+
+from .utils import get_chat_id
 
 EVENT_FIELDS = frozenset({
     "account_id",
@@ -20,10 +23,28 @@ EVENT_FIELDS = frozenset({
     "user_fullname",
 })
 
+MEDIA_TYPES = [
+    "audio",
+    "gif",
+    "photo",
+    "sticker",
+    "video",
+    "video_note",
+    "voice",
+    "document",
+]
+
 
 def _concat_optional(*args):
     non_empty_args = [arg for arg in args if arg]
     return " ".join(non_empty_args) if non_empty_args else None
+
+
+def _get_message_media_type(message):
+    for type in MEDIA_TYPES:
+        if getattr(message, type):
+            return type
+    return None
 
 
 def fill_event(event=None, message=None, account=None, chat=None, user=None):
@@ -33,24 +54,43 @@ def fill_event(event=None, message=None, account=None, chat=None, user=None):
     if message:
         event.update({
             "message_id": message.id,
-            "type_id": getattr(message.media, "value", None),
+            "type_id": _get_message_media_type(message),
             "date": message.date,
             "text": message.text,
         })
+        if message.file:
+            event.update({
+                "file_name": message.file.name,
+                "file_size": message.file.size,
+                "file_ext": message.file.ext,
+                "file_type": message.file.mime_type,
+            })
 
     if account:
         event.update({
             "account_id": account.id,
         })
 
-    if chat:
+    if isinstance(chat, Channel):
         event.update({
-            "chat_id": chat.id,
-            "chat_type": chat.type.value,
+            "chat_id": get_chat_id(chat),
+            "chat_type": "channel",
             "chat_title": chat.title,
+        })
+    elif isinstance(chat, Chat):
+        event.update({
+            "chat_id": get_chat_id(chat),
+            "chat_type": "group",
+            "chat_title": chat.title,
+        })
+    elif isinstance(chat, User):
+        event.update({
+            "chat_id": get_chat_id(chat),
             "chat_login": chat.username,
             "chat_fullname": _concat_optional(chat.first_name, chat.last_name),
         })
+    elif chat is not None:
+        raise ValueError(f"Unsupported type of chat: {type(chat)}")
 
     if user:
         event.update({

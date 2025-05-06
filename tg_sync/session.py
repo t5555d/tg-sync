@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os.path
 import yaml
@@ -5,11 +6,11 @@ import yaml
 from dataclasses import dataclass
 from datetime import datetime
 
-import pyrogram as pg
+import telethon as tt
 
 from .event import fill_event
 from .pipeline import Pipeline
-from .utils import save_yaml
+from .utils import get_chat_id, save_yaml
 
 
 logger = logging.getLogger(__name__)
@@ -38,12 +39,11 @@ class Session:
         self.account = account
         self.pipeline = pipeline
         self.chat_pipelines = {}
-        self.client = pg.Client(
-            account.id,
+        self.client = tt.TelegramClient(
+            f"{account.workdir}/session",
             account.api_id,
             account.api_hash,
-            phone_number=account.phone,
-            workdir=account.workdir,
+            sequential_updates=True,
         )
         self.progress = {}
         self.progress_path = account.workdir + "/progress.yaml"
@@ -56,97 +56,83 @@ class Session:
         Session.instances[account.id] = self
 
     async def _get_chat_pipeline(self, chat):
-        if chat.id in self.chat_pipelines:
-            return self.chat_pipelines[chat.id]
+        chat_id = get_chat_id(chat)
+        if chat_id in self.chat_pipelines:
+            return self.chat_pipelines[chat_id]
         chat_pipeline = await self.pipeline.filter_pipeline(account=self.account, chat=chat)
-        self.chat_pipelines[chat.id] = chat_pipeline
+        self.chat_pipelines[chat_id] = chat_pipeline
         return chat_pipeline
 
     async def _process_message(self, message, pipeline):
+        chat = await message.get_chat()
         event = fill_event(
             message=message,
             account=self.account,
-            chat=message.chat,
-            user=message.from_user,
+            chat=chat,
+            user=await message.get_sender(),
         )
         await pipeline.execute(event)
-        await self._message_processed(message)
-
-    async def _message_processed(self, message):
-        self.progress[message.chat.id] = message.id
+        self.progress[event["chat_id"]] = message.id
         await save_yaml(self.progress, self.progress_path)
 
-    async def _get_chat_history(self, chat_id, limit, **offsets):
-        messages = []
-        batch_options = dict(limit=limit, offset=-limit)
-        async for message in self.client.get_chat_history(chat_id, **offsets, **batch_options):
-            # messages are yielded in reverse chronological order
-            # if we detect first message again, then there are no any messages
-            if messages and messages[0].id == message.id:
-                break
-            if message.id == offsets.get("offset_id"):
-                break
-            messages.append(message)
-        messages.reverse()
-        return messages
+    async def _process_chat_history(self, chat, offset: str, pipeline: Pipeline):
+        offset_id = 0
+        offset_date = None
+        if offset == "processed":
+            chat_id = get_chat_id(chat)
+            offset_id = self.progress.get(chat_id, 0)
+        elif offset != "beginning":
+            offset_date = datetime.fromisoformat(offset)
+
+        async for message in self.client.iter_messages(chat, offset_id=offset_id, offset_date=offset_date, reverse=True):
+            await self._process_message(message, pipeline)
 
     async def _process_history(self, offset: str):
-        async for dialog in self.client.get_dialogs():
-            chat_pipeline = await self._get_chat_pipeline(dialog.chat)
-            if not chat_pipeline:
-                continue
-
-            chat_id = dialog.chat.id
-            offsets = {}
-            if offset == "processed":
-                offsets["offset_id"] = self.progress.get(chat_id, 0)
-            elif offset == "beginning":
-                offsets["offset_id"] = 0
-            else:
-                offsets["offset_date"] = datetime.fromisoformat(offset)
-
-            batch_size = 30
-            messages = await self._get_chat_history(chat_id, batch_size, **offsets)
-            while messages:
-                for message in messages:
-                    await self._process_message(message, chat_pipeline)
-                messages = await self._get_chat_history(chat_id, batch_size, offset_id=self.progress[chat_id])
+        tasks = []
+        async for dialog in self.client.iter_dialogs():
+            chat_pipeline = await self._get_chat_pipeline(dialog.entity)
+            if chat_pipeline:
+                tasks.append(self._process_chat_history(dialog.entity, offset, chat_pipeline))
+        await asyncio.gather(*tasks)
 
     async def start(self, offset: str, live: bool):
         logger.info("%s: starting...", self.account)
-        await self.client.start()
+        await self.client.connect()
 
         if offset != "now":
             await self._process_history(offset)
         if live:
-            msg_handler = pg.handlers.MessageHandler(self._on_message)
-            self.client.add_handler(msg_handler)
+            self.client.add_event_handler(self._on_message, tt.events.NewMessage)
 
     async def stop(self):
         logger.info("%s: stopping...", self.account)
-        await self.client.stop()
+        await self.client.disconnect()
 
     async def list_chats(self):
         logger.info("%s: listing available chats", self.account)
-        async for dialog in self.client.get_dialogs():
-            chat_event = fill_event(chat=dialog.chat)
+        async for dialog in self.client.iter_dialogs():
+            chat_event = fill_event(chat=dialog.entity)
             logger.info("Chat %s", repr(chat_event))
-            chat_pipeline = await self._get_chat_pipeline(dialog.chat)
+            logger.debug("%s", dialog.entity.stringify())
+            chat_pipeline = await self._get_chat_pipeline(dialog.entity)
             if chat_pipeline:
                 logger.info(repr(chat_pipeline))
 
     async def list_users(self):
         logger.info("%s: listing available users")
-        for user in await self.client.get_contacts():
-            user_event = fill_event(user=user)
-            logger.info("User %s", repr(user_event))
+        async for dialog in self.client.iter_dialogs():
+            entity = dialog.entity
+            if isinstance(entity, tt.types.User):
+                user_event = fill_event(user=entity)
+                logger.info("User %s", repr(user_event))
 
-    async def _on_message(self, client, message):
-        chat_pipeline = await self._get_chat_pipeline(message.chat)
+    async def _on_message(self, message):
+        chat = await message.get_chat()
+        chat_pipeline = await self._get_chat_pipeline(chat)
         if chat_pipeline:
             await self._process_message(message, chat_pipeline)
 
     async def download_media(self, chat_id: int, message_id: int):
-        message = await self.client.get_messages(chat_id, message_id)
+        message = await self.client.get_messages(chat_id, ids=message_id)
         download_path = await self.client.download_media(message)
         return download_path
