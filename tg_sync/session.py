@@ -11,7 +11,7 @@ import telethon as tt
 
 from .event import fill_event
 from .pipeline import Pipeline
-from .utils import get_chat_id, save_yaml
+from .utils import get_chat_id, parse_timezone, save_yaml
 
 
 logger = logging.getLogger(__name__)
@@ -22,8 +22,11 @@ class Account:
     id: str
     api_id: int
     api_hash: str
-    phone: str
     workdir: str
+    phone: str = None
+    password: str = None
+    bot_token: str = None
+    timezone: str = None
 
     def __repr__(self):
         return f"Account {self.id}"
@@ -41,18 +44,22 @@ class Session:
         self.pipeline = pipeline
         self.chat_pipelines = {}
         self.client = tt.TelegramClient(
-            f"{account.workdir}/session",
+            f"{account.workdir}/{account.id}.session",
             account.api_id,
             account.api_hash,
             sequential_updates=True,
         )
         self.progress = {}
-        self.progress_path = account.workdir + "/progress.yaml"
+        self.progress_path = f"{account.workdir}/progress.yaml"
         if os.path.exists(self.progress_path):
             with open(self.progress_path) as file:
                 self.progress = yaml.safe_load(file)
         if not self.progress:
             self.progress = {}
+
+        self.tzinfo = None
+        if account.timezone:
+            self.tzinfo = parse_timezone(account.timezone)
 
         Session.instances[account.id] = self
 
@@ -64,13 +71,24 @@ class Session:
         self.chat_pipelines[chat_id] = chat_pipeline
         return chat_pipeline
 
-    async def _process_message(self, message, pipeline):
-        chat = await message.get_chat()
+    async def _get_chat_and_pipeline(self, chat_id):
+        if chat_id in self.chat_pipelines:
+            pipeline = self.chat_pipelines[chat_id]
+            chat = pipeline and await self.client.get_entity(chat_id)
+            return chat, pipeline
+        else:
+            chat = await self.client.get_entity(chat_id)
+            pipeline = self._get_chat_pipeline(chat)
+            return chat, pipeline
+
+    async def _process_message(self, message, chat, pipeline):
         event = fill_event(
             message=message,
+            file=message.file,
             account=self.account,
             chat=chat,
             user=await message.get_sender(),
+            tzinfo=self.tzinfo,
         )
         await pipeline.execute(event)
         self.progress[event["chat_id"]] = message.id
@@ -79,14 +97,14 @@ class Session:
     async def _process_chat_history(self, chat, offset: str, pipeline: Pipeline):
         offset_id = 0
         offset_date = None
-        if offset == "processed":
+        if offset is None:
             chat_id = get_chat_id(chat)
             offset_id = self.progress.get(chat_id, 0)
         elif offset != "beginning":
             offset_date = datetime.fromisoformat(offset)
 
         async for message in self.client.iter_messages(chat, offset_id=offset_id, offset_date=offset_date, reverse=True):
-            await self._process_message(message, pipeline)
+            await self._process_message(message, chat, pipeline)
 
     async def _process_history(self, offset: str):
         tasks = []
@@ -98,7 +116,11 @@ class Session:
 
     async def start(self, offset: str, live: bool):
         logger.info("%s: starting...", self.account)
-        await self.client.connect()
+        await self.client.start(
+            phone=self.account.phone,
+            password=self.account.password,
+            bot_token=self.account.bot_token,
+        )
 
         if offset != "now":
             await self._process_history(offset)
@@ -129,10 +151,9 @@ class Session:
                 logger.debug("%s", dialog.entity.stringify())
 
     async def _on_message(self, message):
-        chat = await message.get_chat()
-        chat_pipeline = await self._get_chat_pipeline(chat)
-        if chat_pipeline:
-            await self._process_message(message, chat_pipeline)
+        chat, pipeline = await self._get_chat_and_pipeline(message.chat_id)
+        if pipeline:
+            await self._process_message(message, chat, pipeline)
 
     async def download_media(self, chat_id: int, message_id: int):
         message = await self.client.get_messages(chat_id, ids=message_id)

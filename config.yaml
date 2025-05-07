@@ -30,10 +30,10 @@ pipeline:
   - action: set
     chat_name: Катя
     save_media: true
-# - filters:
-#   - chat_id: 512494047
-#   actions:
-#   - action: log
+- filters:
+  - chat_id: 512494047
+  actions:
+  - action: log
 
 - filters:
   - save_media: true
@@ -41,6 +41,6 @@ pipeline:
   actions:
   # - action: log
   - action: save
-    old_save_path: "../Telegram/{date:%Y}/{chat_name}/{date:%Y%m%d-%H%M%S}-{type_id}-{message_id}.{file_ext}"
-    save_path: "../Telegram/{date:%Y}/{chat_name}/{date:%Y%m%d-%H%M%S}-{type_id}-{message_id}{file_ext}"
+    old_save_path: "../Telegram/{date_utc:%Y}/{chat_name}/{date_utc:%Y%m%d-%H%M%S}-{type_id}-{message_id}{file_ext}"
+    save_path: "../Telegram/{date:%Y}/{chat_name}/{date:%Y%m%d-%H%M%S}-{message_id}{file_ext}"
     skip_existing: true

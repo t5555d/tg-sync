@@ -61,7 +61,7 @@ class LogAction(Action):
 class SaveAction(Action):
     name = "save"
 
-    def __init__(self, save_path: str, old_save_path: str = None, skip_existing: bool = False):
+    def __init__(self, save_path: str, old_save_path: str = None, skip_existing: bool = None):
         self.save_path = save_path
         self.old_save_path = old_save_path
         self.skip_existing = skip_existing
@@ -76,12 +76,12 @@ class SaveAction(Action):
                 self.logger.info("Skip downloading existing file %s", save_path)
                 return ExecuteResult.SKIPPED
 
-            if self.old_save_path:
-                old_save_path = self.old_save_path.format(**event)
-                if os.path.exists(old_save_path) and os.path.getsize(old_save_path) == event["file_size"]:
-                    os.rename(old_save_path, save_path)
-                    self.logger.info("Moved file from old location: %s", save_path)
-                    return None
+        if self.old_save_path:
+            old_save_path = self.old_save_path.format(**event)
+            if os.path.exists(old_save_path) and os.path.getsize(old_save_path) == event["file_size"]:
+                os.rename(old_save_path, save_path)
+                self.logger.info("Moved file from old location: %s", save_path)
+                return None
 
         session = Session.get(event["account_id"])
         download_path = await session.download_media(event["chat_id"], event["message_id"])

@@ -2,6 +2,8 @@ import aiofiles
 import os.path
 import yaml
 
+from datetime import datetime
+
 from telethon.types import Channel, Chat, User, PeerChannel, PeerChat, PeerUser
 from telethon.utils import get_peer_id
 
@@ -9,6 +11,10 @@ async def save_yaml(data, path):
     async with aiofiles.open(path, "w") as file:
         await file.write(yaml.dump(data))
         await file.flush()
+
+def parse_timezone(tz: str):
+    date = datetime.strptime(tz, "%z")
+    return date.tzinfo
 
 def get_uniq_path(file_path: str) -> str:
     (base, ext) = os.path.splitext(file_path)

@@ -47,7 +47,7 @@ def _get_message_media_type(message):
     return None
 
 
-def fill_event(event=None, message=None, account=None, chat=None, user=None):
+def fill_event(event=None, message=None, file=None, account=None, chat=None, user=None, tzinfo=None):
     if event is None:
         event = {}
 
@@ -55,16 +55,17 @@ def fill_event(event=None, message=None, account=None, chat=None, user=None):
         event.update({
             "message_id": message.id,
             "type_id": _get_message_media_type(message),
-            "date": message.date,
+            "date": message.date.astimezone(tzinfo) if message.date and tzinfo else message.date,
+            "date_utc": message.date,
             "text": message.text,
         })
-        if message.file:
-            event.update({
-                "file_name": message.file.name,
-                "file_size": message.file.size,
-                "file_ext": message.file.ext,
-                "file_type": message.file.mime_type,
-            })
+    if file:
+        event.update({
+            "file_name": file.name,
+            "file_size": file.size,
+            "file_ext": file.ext,
+            "file_type": file.mime_type,
+        })
 
     if account:
         event.update({

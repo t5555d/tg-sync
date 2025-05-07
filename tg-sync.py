@@ -61,12 +61,12 @@ def main():
     parser.add_argument("--list-chats", action="store_true")
     parser.add_argument("--list-users", action="store_true")
     parser.add_argument("--list-types", action="store_true")
-    parser.add_argument("--offset", default="processed",
+    parser.add_argument("--from", dest="offset",
         help="""Where to start processing of chat history. One of:
         beginning - process chat from the beginning;
         processed - process chat from the last processed message;
         now - don't process chat history;
-        or an ISO 8601 formatted date to process from (e.g. 2025-04-29T00:00:00)""")
+        or an ISO 8601 formatted date to process from (e.g. 2025-04-29T00:00:00+07:00)""")
     params = parser.parse_args()
 
     # do no actions on config keys
