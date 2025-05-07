@@ -1,5 +1,21 @@
 logging:
-  level: INFO
+  version: 1
+  formatters:
+    standard:
+      format: '%(asctime)s [%(levelname)s] %(name)s: %(message)s'
+  handlers:
+    stderr:
+      class: logging.StreamHandler
+      formatter: standard
+      level: DEBUG
+      stream: ext://sys.stderr
+  loggers:
+    telethon:
+      handlers: [stderr]
+      level: WARN
+    tg_sync:
+      handlers: [stderr]
+      level: INFO
 
 pipeline:
 - filters:

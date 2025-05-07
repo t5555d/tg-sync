@@ -3,6 +3,7 @@
 import argparse
 import asyncio
 import logging
+import logging.config
 import os
 import yaml
 
@@ -11,7 +12,7 @@ from tg_sync.event import MEDIA_TYPES
 from tg_sync.pipeline import Pipeline
 from tg_sync.session import Session, Account
 
-logger = logging.getLogger("tg-sync")
+logger = logging.getLogger("tg_sync")
 
 async def run(params):
     with open(params.config) as file:
@@ -19,7 +20,7 @@ async def run(params):
 
     log_config = config.get("logging")
     if log_config:
-        logging.basicConfig(**log_config)
+        logging.config.dictConfig(log_config)
 
     pipeline = Pipeline.from_config(config["pipeline"])
 

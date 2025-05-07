@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 import os.path
 import yaml
 
@@ -125,6 +126,7 @@ class Session:
             if isinstance(entity, tt.types.User):
                 user_event = fill_event(user=entity)
                 logger.info("User %s", repr(user_event))
+                logger.debug("%s", dialog.entity.stringify())
 
     async def _on_message(self, message):
         chat = await message.get_chat()
@@ -134,5 +136,8 @@ class Session:
 
     async def download_media(self, chat_id: int, message_id: int):
         message = await self.client.get_messages(chat_id, ids=message_id)
-        download_path = await self.client.download_media(message)
-        return download_path
+        download_dir = f"{self.account.workdir}/downloads"
+        os.makedirs(download_dir, exist_ok=True)
+        download_path = f"{download_dir}/{chat_id}-{message_id}.tmp"
+        progress = lambda current, total: logger.debug(f"Download media {chat_id}/{message_id}: {current}/{total} bytes ({100 * current // total}%)")
+        return await self.client.download_media(message, file=download_path, progress_callback=progress)

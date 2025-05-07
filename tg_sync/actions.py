@@ -38,13 +38,13 @@ class ExitAction(Action):
 class LogAction(Action):
     name = "log"
 
-    def __init__(self, logger="tg-sync", level="INFO", message="Event: {event}"):
+    def __init__(self, logger=None, level="INFO", message="Event: {event}"):
         def get_log_level_variants(level):
             yield level
             yield logging.getLevelName(level)
             yield logging.getLevelName(level.upper())
 
-        self.logger = logging.getLogger()
+        self.logger = logging.getLogger(logger or f"{__name__}.{self.name}")
         self.level = next(lvl for lvl in get_log_level_variants(level) if isinstance(lvl, int))
         self.message = message
 
@@ -65,6 +65,7 @@ class SaveAction(Action):
         self.save_path = save_path
         self.old_save_path = old_save_path
         self.skip_existing = skip_existing
+        self.logger = logging.getLogger(f"{__name__}.{self.name}")
 
     async def execute(self, event, dry_run=False, **kwargs):
         if dry_run:
@@ -72,14 +73,14 @@ class SaveAction(Action):
         save_path = self.save_path.format(**event)
         if self.skip_existing:
             if os.path.exists(save_path) and os.path.getsize(save_path) == event["file_size"]:
-                logger.info("Skip downloading existing file %s", save_path)
+                self.logger.info("Skip downloading existing file %s", save_path)
                 return ExecuteResult.SKIPPED
 
             if self.old_save_path:
                 old_save_path = self.old_save_path.format(**event)
                 if os.path.exists(old_save_path) and os.path.getsize(old_save_path) == event["file_size"]:
                     os.rename(old_save_path, save_path)
-                    logger.info("Moved file from old location: %s", save_path)
+                    self.logger.info("Moved file from old location: %s", save_path)
                     return None
 
         session = Session.get(event["account_id"])
@@ -88,4 +89,4 @@ class SaveAction(Action):
         os.makedirs(save_dir, exist_ok=True)
         uniq_path = get_uniq_path(save_path)
         os.rename(download_path, uniq_path)
-        logger.info("Saved file %s", uniq_path)
+        self.logger.info("Saved file %s", uniq_path)
