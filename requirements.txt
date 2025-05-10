@@ -1,0 +1,4 @@
+aiofiles
+pyyaml
+telethon
+tgcrypto

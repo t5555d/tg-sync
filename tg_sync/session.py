@@ -67,7 +67,8 @@ class Session:
         chat_id = get_chat_id(chat)
         if chat_id in self.chat_pipelines:
             return self.chat_pipelines[chat_id]
-        chat_pipeline = await self.pipeline.filter_pipeline(account=self.account, chat=chat)
+        sample_event = fill_event(account=self.account, chat=chat)
+        chat_pipeline = await self.pipeline.filter_pipeline(sample_event)
         self.chat_pipelines[chat_id] = chat_pipeline
         return chat_pipeline
 

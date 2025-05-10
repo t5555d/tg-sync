@@ -3,13 +3,14 @@ import logging
 from enum import Enum, auto
 from typing import Optional
 
-from .event import EVENT_FIELDS, fill_event
+from .event import EVENT_FIELDS
+
 
 logger = logging.getLogger(__name__)
 
 
 class Filter:
-    MATCH_ALWAYS = "---tg-sync-match-always---"
+    MATCH_POSSIBLE = "---tg-sync-match-possible---"
 
     def __init__(self, **values):
         self.values = values
@@ -18,8 +19,8 @@ class Filter:
         return f"Filter: {self.values}"
 
     def matches_key(self, event, key) -> bool:
-        if event.get(key) == Filter.MATCH_ALWAYS:
-            return True
+        if event.get(key) == Filter.MATCH_POSSIBLE:
+            return None
         actual_value = event.get(key)
         expected_value = self.values.get(key)
         if isinstance(expected_value, list):
@@ -28,10 +29,14 @@ class Filter:
             return actual_value == expected_value
 
     def matches(self, event: dict) -> bool:
-        return all(
-            self.matches_key(event, key)
-            for key in self.values
-        )
+        filter_result = True
+        for key in self.values:
+            key_result = self.matches_key(event, key)
+            if key_result is False:
+                return False
+            if key_result is None:
+                filter_result = None
+        return filter_result
 
 
 class ExecuteResult(Enum):
@@ -48,7 +53,10 @@ class Action:
     def from_config(action: str, **params):
         if action not in Action.subclasses:
             raise ValueError(f"Unknown action '{action}'")
-        return Action.subclasses[action](**params)
+        try:
+            return Action.subclasses[action](**params)
+        except Exception as err:
+            raise ValueError(f"Failed to create action '{action}' from {params}") from err
 
     def __repr__(self):
         return f"Action {self.name}"
@@ -90,6 +98,33 @@ class ProcessingStep:
             if result in (ExecuteResult.EXIT_PIPELINE, ExecuteResult.DRY_RUN):
                 return result
 
+    async def filter_step(self, event: dict) -> "ProcessingStep":
+        filter_result = True
+        possibly_matching_filters = []
+        if self.filters:
+            filter_results = [(filter, filter.matches(event)) for filter in self.filters]
+            possibly_matching_filters = [
+                filter for filter, result in filter_results if result is not False
+            ]
+            if not possibly_matching_filters:
+                return None
+            if any(result is None for filter, result in filter_results):
+                filter_result = None
+        executed_actions = []
+        has_modify = False
+        has_exit = False
+        for action in self.actions:
+            result = await action.execute(event, dry_run=True)
+            if result == ExecuteResult.EXIT_STEP:
+                break
+            if result == ExecuteResult.DRY_RUN:
+                has_modify = True
+            if result == ExecuteResult.EXIT_PIPELINE and filter_result is True:
+                has_exit = True
+                break
+            executed_actions.append(action)
+        return possibly_matching_filters, executed_actions, has_modify, has_exit
+
 
 class Pipeline:
 
@@ -111,23 +146,25 @@ class Pipeline:
             if result == ExecuteResult.EXIT_PIPELINE:
                 break
 
-    async def filter_pipeline(self, **kwargs) -> Optional["Pipeline"]:
+    async def filter_pipeline(self, sample_event) -> Optional["Pipeline"]:
         event = {
-            key : Filter.MATCH_ALWAYS
+            key : Filter.MATCH_POSSIBLE
             for key in EVENT_FIELDS
         }
-        fill_event(event, **kwargs)
+        event.update(sample_event)
         filtered_steps = []
         has_meaningful_actions = False
         for step in self.steps:
-            result = await step.execute(event, dry_run=True)
-            if result == ExecuteResult.SKIPPED:
+            step_data = await step.filter_step(event)
+            if step_data is None:
                 continue  # filters not passing, skip
-            if result == ExecuteResult.EXIT_PIPELINE:
+            filters, actions, has_modify, has_exit = step_data
+
+            has_meaningful_actions |= has_modify
+            filtered_steps.append(ProcessingStep(filters, actions))
+
+            if has_exit:
                 break
-            if result == ExecuteResult.DRY_RUN:
-                has_meaningful_actions = True
-            filtered_steps.append(step)
 
         if has_meaningful_actions:
             return Pipeline(filtered_steps)

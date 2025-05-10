@@ -1,5 +1,3 @@
-from enum import Enum
-
 from telethon.types import Channel, Chat, User
 from telethon.utils import get_input_location
 
@@ -47,9 +45,8 @@ def _get_message_media_type(message):
     return None
 
 
-def fill_event(event=None, message=None, file=None, account=None, chat=None, user=None, tzinfo=None):
-    if event is None:
-        event = {}
+def fill_event(message=None, file=None, account=None, chat=None, user=None, tzinfo=None):
+    event = {}
 
     if message:
         event.update({

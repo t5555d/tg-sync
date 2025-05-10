@@ -2,7 +2,7 @@ import logging
 import os
 
 from .event import EVENT_FIELDS
-from .pipeline import Action, register_action, ExecuteResult
+from .pipeline import Action, Filter, register_action, ExecuteResult
 from .session import Session
 from .utils import get_uniq_path
 
@@ -22,8 +22,12 @@ class SetAction(Action):
     def __repr__(self):
         return f"Action {self.name}: " + ", ".join(f"{key}={val}" for key, val in self.values.items())
 
-    async def execute(self, event, **kwargs):
-        event.update(self.values)
+    async def execute(self, event, dry_run=False, **kwargs):
+        if not dry_run:
+            event.update(self.values)
+        else:
+            for key in self.values:
+                event[key] = Filter.MATCH_POSSIBLE
 
 
 @register_action
@@ -49,7 +53,7 @@ class LogAction(Action):
         self.message = message
 
     def __repr__(self):
-        return f"Action '{self.name}': level={self.level}"
+        return f"Action {self.name}: level={self.level}"
 
     async def execute(self, event, dry_run=False, **kwargs):
         if dry_run:
