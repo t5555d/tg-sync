@@ -113,7 +113,7 @@ def fill_event(message=None, file=None, account=None, chat=None, user=None, fwd_
     if isinstance(chat, Channel):
         event.update({
             ChatField.CHAT_ID: get_chat_id(chat),
-            ChatField.CHAT_TYPE: "channel",
+            ChatField.CHAT_TYPE: "channel" if chat.broadcast else "group",
             ChatField.CHAT_TITLE: chat.title,
         })
     elif isinstance(chat, Chat):
