@@ -79,7 +79,7 @@ class Session:
             return chat, pipeline
         else:
             chat = await self.client.get_entity(chat_id)
-            pipeline = self._get_chat_pipeline(chat)
+            pipeline = await self._get_chat_pipeline(chat)
             return chat, pipeline
 
     async def _process_message(self, message, chat, pipeline):
@@ -89,6 +89,8 @@ class Session:
             account=self.account,
             chat=chat,
             user=await message.get_sender(),
+            fwd_chat=message.forward and await message.forward.get_chat(),
+            fwd_user=message.forward and await message.forward.get_sender(),
             tzinfo=self.tzinfo,
         )
         await pipeline.execute(event)

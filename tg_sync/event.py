@@ -3,23 +3,63 @@ from telethon.utils import get_input_location
 
 from .utils import get_chat_id
 
-EVENT_FIELDS = frozenset({
-    "account_id",
-    "message_id",
-    "type_id",
-    "date",
-    "text",
 
-    "chat_id",
-    "chat_type",
-    "chat_title",
-    "chat_login",
-    "chat_fullname",
+class ChatField:
+    CHAT_ID = "chat_id"
+    CHAT_TYPE = "chat_type"
+    CHAT_TITLE = "chat_title"
+    CHAT_LOGIN = "chat_login"
 
-    "user_id",
-    "user_login",
-    "user_fullname",
-})
+
+class UserField:
+    USER_ID = "user_id"
+    USER_LOGIN = "user_login"
+    USER_TITLE = "user_title"
+
+
+class FileField:
+    FILE_EXT = "file_ext"
+    FILE_NAME = "file_name"
+    FILE_SIZE = "file_size"
+    FILE_TYPE = "file_type"
+
+
+class EventField(ChatField, UserField):
+    ACCOUNT_ID = "account_id"
+    MESSAGE_ID = "message_id"
+    TYPE_ID = "type_id"
+    TEXT = "text"
+    DATE = "date"
+    DATE_UTC = "date_utc"
+    FORWARD = "forward"
+
+
+def _get_fields(cls):
+    return frozenset({
+        value for key, value in cls.__dict__.items()
+        if not key.startswith("__")
+    })
+
+
+def _add_prefix(fields, prefix):
+    return { prefix + field for field in fields }
+
+
+FORWARD_PREFIX = "forward_"
+
+ChatField.ALL = _get_fields(ChatField)
+UserField.ALL = _get_fields(UserField)
+FileField.ALL = _get_fields(FileField)
+
+
+EVENT_FIELDS = frozenset(
+    ChatField.ALL |
+    UserField.ALL |
+    FileField.ALL |
+    _add_prefix(ChatField.ALL, FORWARD_PREFIX) |
+    _add_prefix(UserField.ALL, FORWARD_PREFIX) |
+    _get_fields(EventField)
+)
 
 MEDIA_TYPES = [
     "audio",
@@ -45,56 +85,63 @@ def _get_message_media_type(message):
     return None
 
 
-def fill_event(message=None, file=None, account=None, chat=None, user=None, tzinfo=None):
+def fill_event(message=None, file=None, account=None, chat=None, user=None, fwd_chat=None, fwd_user=None, tzinfo=None):
     event = {}
 
     if message:
         event.update({
-            "message_id": message.id,
-            "type_id": _get_message_media_type(message),
-            "date": message.date.astimezone(tzinfo) if message.date and tzinfo else message.date,
-            "date_utc": message.date,
-            "text": message.text,
+            EventField.MESSAGE_ID: message.id,
+            EventField.TYPE_ID: _get_message_media_type(message),
+            EventField.DATE: message.date.astimezone(tzinfo) if message.date and tzinfo else message.date,
+            EventField.DATE_UTC: message.date,
+            EventField.TEXT: message.text,
+            EventField.FORWARD: fwd_chat is not None or fwd_user is not None,
         })
     if file:
         event.update({
-            "file_name": file.name,
-            "file_size": file.size,
-            "file_ext": file.ext,
-            "file_type": file.mime_type,
+            FileField.FILE_EXT: file.ext,
+            FileField.FILE_NAME: file.name,
+            FileField.FILE_SIZE: file.size,
+            FileField.FILE_TYPE: file.mime_type,
         })
 
     if account:
         event.update({
-            "account_id": account.id,
+            EventField.ACCOUNT_ID: account.id,
         })
 
     if isinstance(chat, Channel):
         event.update({
-            "chat_id": get_chat_id(chat),
-            "chat_type": "channel",
-            "chat_title": chat.title,
+            ChatField.CHAT_ID: get_chat_id(chat),
+            ChatField.CHAT_TYPE: "channel",
+            ChatField.CHAT_TITLE: chat.title,
         })
     elif isinstance(chat, Chat):
         event.update({
-            "chat_id": get_chat_id(chat),
-            "chat_type": "group",
-            "chat_title": chat.title,
+            ChatField.CHAT_ID: get_chat_id(chat),
+            ChatField.CHAT_TYPE: "group",
+            ChatField.CHAT_TITLE: chat.title,
         })
     elif isinstance(chat, User):
         event.update({
-            "chat_id": get_chat_id(chat),
-            "chat_login": chat.username,
-            "chat_fullname": _concat_optional(chat.first_name, chat.last_name),
+            ChatField.CHAT_ID: get_chat_id(chat),
+            ChatField.CHAT_TYPE: "private",
+            ChatField.CHAT_TITLE: _concat_optional(chat.first_name, chat.last_name),
+            ChatField.CHAT_LOGIN: chat.username,
         })
     elif chat is not None:
         raise ValueError(f"Unsupported type of chat: {type(chat)}")
 
     if user:
         event.update({
-            "user_id": user.id,
-            "user_login": user.username,
-            "user_fullname": _concat_optional(user.first_name, user.last_name),
+            UserField.USER_ID: user.id,
+            UserField.USER_LOGIN: user.username,
+            UserField.USER_TITLE: _concat_optional(user.first_name, user.last_name),
         })
+
+    if fwd_chat or fwd_user:
+        fwd_event = fill_event(chat=fwd_chat, user=fwd_user)
+        for key, value in fwd_event.items():
+            event[FORWARD_PREFIX + key] = value
 
     return event

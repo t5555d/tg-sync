@@ -46,16 +46,18 @@ chat_id: int
 chat_type: str
 chat_title: str
 chat_login: str
-chat_fullname: str
 user_id: int
 user_login: str
-user_fullname: str
+user_title: str
 type_id: str
 date: datetime
 file_ext: str
 file_name: str
 file_size: int
 file_type: str
+forward: bool
+forward_chat_...: ...
+forward_user_...: ...
 ```
 
 Processing pipeline consists of steps, executed sequentially. Each step defines `filters` (optional) and `actions` (required). If `filters` are present, event should match at least one of filters to execute `actions`.
