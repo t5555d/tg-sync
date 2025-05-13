@@ -62,9 +62,11 @@ EVENT_FIELDS = frozenset(
 )
 
 MEDIA_TYPES = [
+    "web_preview",
+    "photo",
+
     "audio",
     "gif",
-    "photo",
     "sticker",
     "video",
     "video_note",
@@ -91,11 +93,11 @@ def fill_event(message=None, file=None, account=None, chat=None, user=None, fwd_
     if message:
         event.update({
             EventField.MESSAGE_ID: message.id,
-            EventField.TYPE_ID: _get_message_media_type(message),
+            EventField.TYPE_ID: _get_message_media_type(message) if file else None,
             EventField.DATE: message.date.astimezone(tzinfo) if message.date and tzinfo else message.date,
             EventField.DATE_UTC: message.date,
             EventField.TEXT: message.text,
-            EventField.FORWARD: fwd_chat is not None or fwd_user is not None,
+            EventField.FORWARD: message.fwd_from is not None,
         })
     if file:
         event.update({

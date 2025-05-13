@@ -80,6 +80,9 @@ class SaveAction(Action):
                 self.logger.info("Skip downloading existing file %s", save_path)
                 return ExecuteResult.SKIPPED
 
+        save_dir = os.path.dirname(save_path)
+        os.makedirs(save_dir, exist_ok=True)
+
         if self.old_save_path:
             old_save_path = self.old_save_path.format(**event)
             if os.path.exists(old_save_path) and os.path.getsize(old_save_path) == event["file_size"]:
@@ -89,8 +92,6 @@ class SaveAction(Action):
 
         session = Session.get(event["account_id"])
         download_path = await session.download_media(event["chat_id"], event["message_id"])
-        save_dir = os.path.dirname(save_path)
-        os.makedirs(save_dir, exist_ok=True)
         uniq_path = get_uniq_path(save_path)
         os.rename(download_path, uniq_path)
         self.logger.info("Saved file %s", uniq_path)

@@ -83,14 +83,17 @@ class Session:
             return chat, pipeline
 
     async def _process_message(self, message, chat, pipeline):
+        logger.debug("Processing message %s", message.stringify())
+        fwd_user = message.forward and await message.forward.get_sender()
+        fwd_chat = message.forward and await message.forward.get_chat()
         event = fill_event(
             message=message,
             file=message.file,
             account=self.account,
             chat=chat,
             user=await message.get_sender(),
-            fwd_chat=message.forward and await message.forward.get_chat(),
-            fwd_user=message.forward and await message.forward.get_sender(),
+            fwd_chat=fwd_chat,
+            fwd_user=fwd_user,
             tzinfo=self.tzinfo,
         )
         await pipeline.execute(event)
@@ -124,7 +127,6 @@ class Session:
             password=self.account.password,
             bot_token=self.account.bot_token,
         )
-
         if offset != "now":
             await self._process_history(offset)
         if live:

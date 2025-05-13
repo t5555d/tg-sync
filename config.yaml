@@ -38,9 +38,27 @@ pipeline:
 - filters:
   - save_media: true
     type_id: [photo, video, document]
+    forward_chat_type: [private, group, null]
   actions:
-  # - action: log
   - action: save
-    old_save_path: "../Telegram/{date_utc:%Y}/{chat_name}/{date_utc:%Y%m%d-%H%M%S}-{type_id}-{message_id}{file_ext}"
     save_path: "../Telegram/{date:%Y}/{chat_name}/{date:%Y%m%d-%H%M%S}-{message_id}{file_ext}"
+    skip_existing: true
+
+- filters:
+  - save_media: true
+    type_id: web_preview
+  actions:
+  - action: save
+    old_save_path: "../Telegram/{date:%Y}/{chat_name}/{date:%Y%m%d-%H%M%S}-{message_id}{file_ext}"
+    save_path: "../Telegram/{date:%Y}/{chat_name}/web_preview/{date:%Y%m%d-%H%M%S}-{message_id}{file_ext}"
+    skip_existing: true
+
+- filters:
+  - save_media: true
+    type_id: [photo, video, document]
+    forward_chat_type: channel
+  actions:
+  - action: save
+    old_save_path: "../Telegram/{date:%Y}/{chat_name}/{date:%Y%m%d-%H%M%S}-{message_id}{file_ext}"
+    save_path: "../Telegram/{date:%Y}/{chat_name}/forward/{date:%Y%m%d-%H%M%S}-{message_id}{file_ext}"
     skip_existing: true
